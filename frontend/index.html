@@ -97,6 +97,16 @@
                   <rect x="14" y="4" width="4" height="16"></rect>
                 </svg>
               </button>
+              <button id="btn-traceroute" class="btn btn-secondary" title="Трассировка маршрута к хосту">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="6" cy="18" r="3"></circle>
+                  <circle cx="18" cy="6" r="3"></circle>
+                  <circle cx="18" cy="18" r="3"></circle>
+                  <line x1="8.59" y1="16.41" x2="15.42" y2="9.59"></line>
+                  <line x1="8.59" y1="18" x2="15" y2="18"></line>
+                </svg>
+                Трассировка
+              </button>
               <button id="btn-export-single" class="btn btn-secondary" title="Экспортировать историю пингов в CSV">
                 <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
                   <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
@@ -179,6 +189,52 @@
             </div>
             <div class="canvas-wrapper">
               <canvas id="pingChart"></canvas>
+            </div>
+          </div>
+
+          <!-- Traceroute Card (Collapsible) -->
+          <div id="traceroute-card" class="traceroute-container-card" style="display: none;">
+            <div class="traceroute-header">
+              <div class="traceroute-title-wrap">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="6" cy="18" r="3"></circle>
+                  <circle cx="18" cy="6" r="3"></circle>
+                  <circle cx="18" cy="18" r="3"></circle>
+                  <line x1="8.59" y1="16.41" x2="15.42" y2="9.59"></line>
+                  <line x1="8.59" y1="18" x2="15" y2="18"></line>
+                </svg>
+                <h3>Маршрут пакетов (Traceroute)</h3>
+                <span id="traceroute-target-badge" class="code-badge">--</span>
+              </div>
+              <div class="traceroute-actions">
+                <button id="btn-rerun-traceroute" class="btn btn-secondary btn-sm">Повторить замер</button>
+                <button id="btn-close-traceroute" class="modal-close" style="font-size: 18px;">&times;</button>
+              </div>
+            </div>
+            
+            <div id="traceroute-loading" class="traceroute-spinner-wrap" style="display: none;">
+              <div class="spinner"></div>
+              <span>Опрос сетевых узлов и измерение задержки...</span>
+            </div>
+
+            <!-- Route Visual Chain (macOS Node Badges) -->
+            <div id="traceroute-chain" class="traceroute-chain-flow"></div>
+
+            <!-- Detailed Table -->
+            <div id="traceroute-table-wrap" class="table-scroll" style="margin-top: 14px; max-height: 200px;">
+              <table class="mac-table">
+                <thead>
+                  <tr>
+                    <th style="width: 60px;">Хоп</th>
+                    <th>Узел / Провайдер</th>
+                    <th>IP адрес</th>
+                    <th>Задержка (мс)</th>
+                    <th>Статус</th>
+                  </tr>
+                </thead>
+                <tbody id="traceroute-table-body">
+                </tbody>
+              </table>
             </div>
           </div>
 

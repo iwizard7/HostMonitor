@@ -257,6 +257,26 @@ async def export_all_csv():
         headers={"Content-Disposition": f"attachment; filename={filename}"}
     )
 
+from backend.traceroute import run_traceroute
+
+@app.get("/api/hosts/{host_id}/traceroute")
+async def get_host_traceroute(host_id: int):
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        h_cursor = await db.execute("SELECT * FROM hosts WHERE id = ?", (host_id,))
+        host = await h_cursor.fetchone()
+        if not host:
+            raise HTTPException(status_code=404, detail="Host not found")
+
+    target = host["target"]
+    hops = await run_traceroute(target, max_hops=18)
+    return {
+        "host_id": host_id,
+        "name": host["name"],
+        "target": target,
+        "hops": hops
+    }
+
 # Static frontend files mount
 if os.path.exists(FRONTEND_DIR):
     app.mount("/", StaticFiles(directory=FRONTEND_DIR, html=True), name="frontend")

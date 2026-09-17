@@ -461,6 +461,120 @@ function escapeHtml(str) {
   return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
+// Traceroute Elements
+const btnTraceroute = document.getElementById('btn-traceroute');
+const tracerouteCard = document.getElementById('traceroute-card');
+const tracerouteTargetBadge = document.getElementById('traceroute-target-badge');
+const btnCloseTraceroute = document.getElementById('btn-close-traceroute');
+const btnRerunTraceroute = document.getElementById('btn-rerun-traceroute');
+const tracerouteLoading = document.getElementById('traceroute-loading');
+const tracerouteChain = document.getElementById('traceroute-chain');
+const tracerouteTableBody = document.getElementById('traceroute-table-body');
+
+async function executeTraceroute() {
+  if (!selectedHostId) return;
+  const host = hosts.find(h => h.id === selectedHostId);
+  if (!host) return;
+
+  tracerouteCard.style.display = 'block';
+  tracerouteTargetBadge.textContent = `${host.name} (${host.target})`;
+  tracerouteLoading.style.display = 'flex';
+  tracerouteChain.innerHTML = '';
+  tracerouteTableBody.innerHTML = '';
+
+  try {
+    const res = await fetch(`/api/hosts/${selectedHostId}/traceroute`);
+    if (!res.ok) throw new Error('Ошибка запуска трассировки');
+    const data = await res.json();
+    renderTraceroute(data.hops, host.target);
+  } catch (err) {
+    tracerouteChain.innerHTML = `<div class="text-muted" style="color: #f85149;">Ошибка: ${escapeHtml(err.message)}</div>`;
+  } finally {
+    tracerouteLoading.style.display = 'none';
+  }
+}
+
+function renderTraceroute(hops, target) {
+  tracerouteChain.innerHTML = '';
+  tracerouteTableBody.innerHTML = '';
+
+  if (!hops || hops.length === 0) {
+    tracerouteChain.innerHTML = '<div class="text-muted">Нет доступных данных трассировки</div>';
+    return;
+  }
+
+  // Local device hop
+  const localNode = document.createElement('div');
+  localNode.className = 'hop-node';
+  localNode.innerHTML = `
+    <span class="hop-badge-num">СТАРТ</span>
+    <span class="hop-node-icon">💻</span>
+    <span class="hop-name">Ваш Mac</span>
+    <span class="hop-ip">localhost</span>
+    <span class="hop-latency-pill fast">0 ms</span>
+  `;
+  tracerouteChain.appendChild(localNode);
+
+  hops.forEach((hop, idx) => {
+    // Connector arrow
+    const arrow = document.createElement('div');
+    arrow.className = 'hop-connector';
+    arrow.innerHTML = '➔';
+    tracerouteChain.appendChild(arrow);
+
+    const isLast = (idx === hops.length - 1) || (hop.ip === target);
+    const isTimeout = hop.status === 'timeout';
+    
+    let latClass = 'fast';
+    let latText = '--';
+    if (!isTimeout && hop.avg_ms !== null) {
+      latText = `${hop.avg_ms} ms`;
+      latClass = hop.avg_ms < 40 ? 'fast' : hop.avg_ms < 90 ? 'medium' : 'slow';
+    } else {
+      latText = '* * *';
+      latClass = 'loss';
+    }
+
+    const icon = isLast ? '🎯' : isTimeout ? '🛡️' : '🌐';
+
+    const node = document.createElement('div');
+    node.className = `hop-node ${isLast ? 'endpoint' : ''} ${isTimeout ? 'timeout' : ''}`;
+    node.innerHTML = `
+      <span class="hop-badge-num">ХОП ${hop.hop}</span>
+      <span class="hop-node-icon">${icon}</span>
+      <span class="hop-name" title="${escapeHtml(hop.host)}">${escapeHtml(hop.host)}</span>
+      <span class="hop-ip">${escapeHtml(hop.ip)}</span>
+      <span class="hop-latency-pill ${latClass}">${latText}</span>
+    `;
+    tracerouteChain.appendChild(node);
+
+    // Add row in table
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td><strong>#${hop.hop}</strong></td>
+      <td>${escapeHtml(hop.host)}</td>
+      <td><code>${escapeHtml(hop.ip)}</code></td>
+      <td><strong>${latText}</strong></td>
+      <td>${isTimeout 
+        ? '<span class="badge" style="background: rgba(248,81,73,0.15); color: #f85149;">ТАЙМАУТ</span>' 
+        : '<span class="badge" style="background: rgba(46,160,67,0.15); color: #3fb950;">ДОСТУПЕН</span>'}</td>
+    `;
+    tracerouteTableBody.appendChild(tr);
+  });
+}
+
+if (btnTraceroute) {
+  btnTraceroute.addEventListener('click', executeTraceroute);
+}
+if (btnRerunTraceroute) {
+  btnRerunTraceroute.addEventListener('click', executeTraceroute);
+}
+if (btnCloseTraceroute) {
+  btnCloseTraceroute.addEventListener('click', () => {
+    tracerouteCard.style.display = 'none';
+  });
+}
+
 // Window init
 window.addEventListener('DOMContentLoaded', () => {
   initChart();
