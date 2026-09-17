@@ -20,7 +20,8 @@ const headerInterval = document.getElementById('header-interval');
 const btnToggleActive = document.getElementById('btn-toggle-active');
 const btnDeleteHost = document.getElementById('btn-delete-host');
 const btnExportSingle = document.getElementById('btn-export-single');
-const btnExportAll = document.getElementById('btn-export-all');
+const btnExportActive = document.getElementById('btn-export-active');
+const titlebarExportText = document.getElementById('titlebar-export-text');
 
 // Metrics Elements
 const metricCurrentPing = document.getElementById('metric-current-ping');
@@ -225,6 +226,9 @@ function updateHostDetails(host) {
   headerHostName.textContent = host.name;
   headerHostTarget.textContent = host.target;
   headerInterval.textContent = `${host.interval_sec}с`;
+  if (titlebarExportText) {
+    titlebarExportText.textContent = `Выгрузить ${host.name} в CSV`;
+  }
 
   // Status & Dot
   let status = 'Офлайн';
@@ -340,14 +344,18 @@ function renderLogTable(records) {
 }
 
 // Button Handlers
-btnExportSingle.addEventListener('click', () => {
-  if (!selectedHostId) return;
+function exportCurrentHost() {
+  if (!selectedHostId) {
+    alert('Пожалуйста, выберите хост для выгрузки статистики.');
+    return;
+  }
   window.location.href = `/api/hosts/${selectedHostId}/export/csv`;
-});
+}
 
-btnExportAll.addEventListener('click', () => {
-  window.location.href = `/api/export/all/csv`;
-});
+btnExportSingle.addEventListener('click', exportCurrentHost);
+if (btnExportActive) {
+  btnExportActive.addEventListener('click', exportCurrentHost);
+}
 
 btnToggleActive.addEventListener('click', async () => {
   if (!selectedHostId) return;
