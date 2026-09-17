@@ -205,6 +205,7 @@
                 </svg>
                 <h3>Маршрут пакетов (Traceroute)</h3>
                 <span id="traceroute-target-badge" class="code-badge">--</span>
+                <span id="traceroute-vpn-badge" class="badge" style="display: none; background: rgba(47, 129, 247, 0.2); color: #58a6ff; font-weight: 600;">🔒 VPN ТУННЕЛЬ</span>
               </div>
               <div class="traceroute-actions">
                 <button id="btn-rerun-traceroute" class="btn btn-secondary btn-sm">Повторить замер</button>
@@ -212,6 +213,11 @@
               </div>
             </div>
             
+            <div id="traceroute-info-banner" class="traceroute-banner" style="display: none;">
+              <span class="info-icon">💡</span>
+              <span id="traceroute-info-text">Обнаружен VPN / Proxy туннель: отображен физический роутер и виртуальный узел инкапсуляции.</span>
+            </div>
+
             <div id="traceroute-loading" class="traceroute-spinner-wrap" style="display: none;">
               <div class="spinner"></div>
               <span>Опрос сетевых узлов и измерение задержки...</span>

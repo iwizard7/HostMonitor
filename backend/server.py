@@ -269,12 +269,15 @@ async def get_host_traceroute(host_id: int):
             raise HTTPException(status_code=404, detail="Host not found")
 
     target = host["target"]
-    hops = await run_traceroute(target, max_hops=18)
+    route_data = await run_traceroute(target, max_hops=18)
     return {
         "host_id": host_id,
         "name": host["name"],
         "target": target,
-        "hops": hops
+        "is_vpn": route_data.get("is_vpn", False),
+        "interface": route_data.get("interface", ""),
+        "route_description": route_data.get("route_description", ""),
+        "hops": route_data.get("hops", [])
     }
 
 # Static frontend files mount

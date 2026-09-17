@@ -465,6 +465,9 @@ function escapeHtml(str) {
 const btnTraceroute = document.getElementById('btn-traceroute');
 const tracerouteCard = document.getElementById('traceroute-card');
 const tracerouteTargetBadge = document.getElementById('traceroute-target-badge');
+const tracerouteVpnBadge = document.getElementById('traceroute-vpn-badge');
+const tracerouteInfoBanner = document.getElementById('traceroute-info-banner');
+const tracerouteInfoText = document.getElementById('traceroute-info-text');
 const btnCloseTraceroute = document.getElementById('btn-close-traceroute');
 const btnRerunTraceroute = document.getElementById('btn-rerun-traceroute');
 const tracerouteLoading = document.getElementById('traceroute-loading');
@@ -478,6 +481,8 @@ async function executeTraceroute() {
 
   tracerouteCard.style.display = 'block';
   tracerouteTargetBadge.textContent = `${host.name} (${host.target})`;
+  if (tracerouteVpnBadge) tracerouteVpnBadge.style.display = 'none';
+  if (tracerouteInfoBanner) tracerouteInfoBanner.style.display = 'none';
   tracerouteLoading.style.display = 'flex';
   tracerouteChain.innerHTML = '';
   tracerouteTableBody.innerHTML = '';
@@ -486,17 +491,30 @@ async function executeTraceroute() {
     const res = await fetch(`/api/hosts/${selectedHostId}/traceroute`);
     if (!res.ok) throw new Error('Ошибка запуска трассировки');
     const data = await res.json();
-    renderTraceroute(data.hops, host.target);
+    renderTraceroute(data, host.target);
   } catch (err) {
-    tracerouteChain.innerHTML = `<div class="text-muted" style="color: #f85149;">Ошибка: ${escapeHtml(err.message)}</div>`;
+    tracerouteChain.innerHTML = `<div class="text-muted" style="color: #f85149; padding: 10px;">Ошибка: ${escapeHtml(err.message)}</div>`;
   } finally {
     tracerouteLoading.style.display = 'none';
   }
 }
 
-function renderTraceroute(hops, target) {
+function renderTraceroute(data, target) {
   tracerouteChain.innerHTML = '';
   tracerouteTableBody.innerHTML = '';
+
+  const hops = data.hops || [];
+  const isVpn = data.is_vpn;
+
+  if (tracerouteVpnBadge) {
+    tracerouteVpnBadge.style.display = isVpn ? 'inline-block' : 'none';
+  }
+  if (tracerouteInfoBanner && isVpn) {
+    tracerouteInfoBanner.style.display = 'flex';
+    if (tracerouteInfoText) {
+      tracerouteInfoText.textContent = `Трафик к ${target} идет через виртуальный туннель (${data.interface}). Отображен ваш роутер, точка инкапсуляции и целевой сервер.`;
+    }
+  }
 
   if (!hops || hops.length === 0) {
     tracerouteChain.innerHTML = '<div class="text-muted">Нет доступных данных трассировки</div>';
@@ -511,7 +529,7 @@ function renderTraceroute(hops, target) {
     <span class="hop-node-icon">💻</span>
     <span class="hop-name">Ваш Mac</span>
     <span class="hop-ip">localhost</span>
-    <span class="hop-latency-pill fast">0 ms</span>
+    <span class="hop-latency-pill fast">0.0 ms</span>
   `;
   tracerouteChain.appendChild(localNode);
 
@@ -530,12 +548,19 @@ function renderTraceroute(hops, target) {
     if (!isTimeout && hop.avg_ms !== null) {
       latText = `${hop.avg_ms} ms`;
       latClass = hop.avg_ms < 40 ? 'fast' : hop.avg_ms < 90 ? 'medium' : 'slow';
+    } else if (hop.type === 'vpn') {
+      latText = 'VPN TUN';
+      latClass = 'fast';
     } else {
       latText = '* * *';
       latClass = 'loss';
     }
 
-    const icon = isLast ? '🎯' : isTimeout ? '🛡️' : '🌐';
+    let icon = '🌐';
+    if (hop.type === 'router') icon = '🏠';
+    else if (hop.type === 'vpn') icon = '🔒';
+    else if (isLast) icon = '🎯';
+    else if (isTimeout) icon = '🛡️';
 
     const node = document.createElement('div');
     node.className = `hop-node ${isLast ? 'endpoint' : ''} ${isTimeout ? 'timeout' : ''}`;
@@ -552,7 +577,7 @@ function renderTraceroute(hops, target) {
     const tr = document.createElement('tr');
     tr.innerHTML = `
       <td><strong>#${hop.hop}</strong></td>
-      <td>${escapeHtml(hop.host)}</td>
+      <td>${escapeHtml(hop.host)} ${hop.notes ? `<span class="text-muted">(${escapeHtml(hop.notes)})</span>` : ''}</td>
       <td><code>${escapeHtml(hop.ip)}</code></td>
       <td><strong>${latText}</strong></td>
       <td>${isTimeout 
