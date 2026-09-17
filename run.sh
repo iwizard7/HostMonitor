@@ -27,6 +27,14 @@ PORT=8000
 # Open browser window
 (sleep 1.5 && open "http://localhost:${PORT}") &
 
+# Optionally launch native macOS Menu Bar tray app in background if GUI environment
+if [[ -z "$SSH_CLIENT" && -z "$SSH_TTY" ]]; then
+    echo "🍏 Запуск Menu Bar иконки в строке меню macOS..."
+    (sleep 2 && ./venv/bin/python3 menubar.py) >/dev/null 2>&1 &
+    MENUBAR_PID=$!
+    trap "kill $MENUBAR_PID 2>/dev/null || true" EXIT
+fi
+
 echo "🚀 Сервер запущен на http://localhost:${PORT}"
 echo "Для завершения работы нажмите Ctrl + C"
 

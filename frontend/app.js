@@ -1,11 +1,90 @@
 // Host Monitor Frontend Application
 let hosts = [];
 let selectedHostId = null;
+let selectedGroup = 'all';
+let currentTimeRange = '1m';
 let pingChart = null;
 let pollTimer = null;
+let notificationsEnabled = true;
+let previousHostStatuses = {}; // hostId -> bool is_reachable
+
+// Audio Synthesizer Alert for macOS
+const audioCtx = (typeof AudioContext !== 'undefined' || typeof webkitAudioContext !== 'undefined')
+  ? new (window.AudioContext || window.webkitAudioContext)()
+  : null;
+
+function playAlertSound(type = 'down') {
+  if (!notificationsEnabled || !audioCtx) return;
+  try {
+    if (audioCtx.state === 'suspended') {
+      audioCtx.resume();
+    }
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+
+    if (type === 'down') {
+      // Down: low tone
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(220, audioCtx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(110, audioCtx.currentTime + 0.35);
+      gain.gain.setValueAtTime(0.15, audioCtx.currentTime);
+      gain.gain.linearRampToValueAtTime(0.01, audioCtx.currentTime + 0.35);
+      osc.start();
+      osc.stop(audioCtx.currentTime + 0.35);
+    } else {
+      // Up: bright chime
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(587.33, audioCtx.currentTime); // D5
+      osc.frequency.setValueAtTime(880, audioCtx.currentTime + 0.12); // A5
+      gain.gain.setValueAtTime(0.15, audioCtx.currentTime);
+      gain.gain.linearRampToValueAtTime(0.01, audioCtx.currentTime + 0.35);
+      osc.start();
+      osc.stop(audioCtx.currentTime + 0.35);
+    }
+  } catch (e) {
+    // Ignore audio restrictions
+  }
+}
+
+function sendNativeNotification(title, body) {
+  if (!notificationsEnabled) return;
+  if ("Notification" in window && Notification.permission === "granted") {
+    new Notification(title, { body, icon: "favicon.ico" });
+  }
+}
+
+// Request Notification Permission on first click
+function setupNotifications() {
+  const btn = document.getElementById('btn-toggle-notifs');
+  const label = document.getElementById('notifs-label');
+  if ("Notification" in window && Notification.permission === "default") {
+    Notification.requestPermission();
+  }
+
+  if (btn) {
+    btn.addEventListener('click', () => {
+      notificationsEnabled = !notificationsEnabled;
+      if (notificationsEnabled) {
+        if ("Notification" in window && Notification.permission === "default") {
+          Notification.requestPermission();
+        }
+        btn.classList.remove('btn-danger');
+        btn.classList.add('btn-secondary');
+        label.textContent = "Алерты: Вкл";
+      } else {
+        btn.classList.add('btn-danger');
+        btn.classList.remove('btn-secondary');
+        label.textContent = "Алерты: Выкл";
+      }
+    });
+  }
+}
 
 // DOM Elements
 const hostsContainer = document.getElementById('hosts-container');
+const groupFilterContainer = document.getElementById('group-filter-container');
 const activeHostsCount = document.getElementById('active-hosts-count');
 const dashboardView = document.getElementById('dashboard-view');
 const noHostSelected = document.getElementById('no-host-selected');
@@ -14,6 +93,8 @@ const hostDetails = document.getElementById('host-details');
 // Details Elements
 const headerHostName = document.getElementById('header-host-name');
 const headerHostTarget = document.getElementById('header-host-target');
+const headerHostType = document.getElementById('header-host-type');
+const headerHostGroup = document.getElementById('header-host-group');
 const headerStatusDot = document.getElementById('header-status-indicator');
 const headerStatusText = document.getElementById('header-status-text');
 const headerInterval = document.getElementById('header-interval');
@@ -30,6 +111,8 @@ const metricUptime = document.getElementById('metric-uptime');
 const metricUptimeBar = document.getElementById('metric-uptime-bar');
 const metricPacketLossCount = document.getElementById('metric-packet-loss-count');
 const metricPingCounts = document.getElementById('metric-ping-counts');
+const metricJitter = document.getElementById('metric-jitter');
+const metricQualityScore = document.getElementById('metric-quality-score');
 const metricMinPing = document.getElementById('metric-min-ping');
 const metricAvgPing = document.getElementById('metric-avg-ping');
 const metricMaxPing = document.getElementById('metric-max-ping');
@@ -42,6 +125,22 @@ const btnCloseModal = document.getElementById('btn-close-modal');
 const btnCancelModal = document.getElementById('btn-cancel-modal');
 const formAddHost = document.getElementById('form-add-host');
 const modalError = document.getElementById('modal-error');
+const inputHostType = document.getElementById('input-host-type');
+const groupPortInput = document.getElementById('group-port-input');
+
+if (inputHostType) {
+  inputHostType.addEventListener('change', () => {
+    if (inputHostType.value === 'tcp' || inputHostType.value === 'http') {
+      groupPortInput.style.display = 'flex';
+      const portField = document.getElementById('input-host-port');
+      if (portField && !portField.value) {
+        portField.value = inputHostType.value === 'http' ? '443' : '80';
+      }
+    } else {
+      groupPortInput.style.display = 'none';
+    }
+  });
+}
 
 // Initialize Chart.js
 function initChart() {
@@ -62,7 +161,7 @@ function initChart() {
         borderWidth: 2,
         backgroundColor: gradient,
         fill: true,
-        tension: 0.35,
+        tension: 0.3,
         pointRadius: 2,
         pointHoverRadius: 5,
         pointBackgroundColor: '#58a6ff',
@@ -72,19 +171,11 @@ function initChart() {
     options: {
       responsive: true,
       maintainAspectRatio: false,
-      animation: {
-        duration: 350
-      },
-      interaction: {
-        intersect: false,
-        mode: 'index'
-      },
+      animation: { duration: 250 },
+      interaction: { intersect: false, mode: 'index' },
       scales: {
         x: {
-          grid: {
-            color: 'rgba(255, 255, 255, 0.05)',
-            drawBorder: false,
-          },
+          grid: { color: 'rgba(255, 255, 255, 0.05)', drawBorder: false },
           ticks: {
             color: '#6e7681',
             font: { family: 'JetBrains Mono', size: 10 },
@@ -94,10 +185,7 @@ function initChart() {
         },
         y: {
           beginAtZero: true,
-          grid: {
-            color: 'rgba(255, 255, 255, 0.06)',
-            drawBorder: false,
-          },
+          grid: { color: 'rgba(255, 255, 255, 0.06)', drawBorder: false },
           ticks: {
             color: '#8b949e',
             font: { family: 'JetBrains Mono', size: 10 },
@@ -115,11 +203,24 @@ function initChart() {
           borderWidth: 1,
           displayColors: false,
           callbacks: {
-            label: (item) => `Пинг: ${item.parsed.y !== null ? item.parsed.y + ' ms' : 'Превышен таймаут'}`
+            label: (item) => `Пинг: ${item.parsed.y !== null ? item.parsed.y + ' ms' : 'Таймаут / Сбой'}`
           }
         }
       }
     }
+  });
+
+  // Time Range Selector Clicks
+  const timeBtns = document.querySelectorAll('.time-btn');
+  timeBtns.forEach(btn => {
+    btn.addEventListener('click', () => {
+      timeBtns.forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      currentTimeRange = btn.dataset.range;
+      if (selectedHostId) {
+        updateHistoryAndChart(selectedHostId);
+      }
+    });
   });
 }
 
@@ -129,9 +230,13 @@ async function fetchHosts() {
     const res = await fetch('/api/hosts');
     if (!res.ok) throw new Error('Ошибка загрузки');
     hosts = await res.json();
+    
+    // Check for status changes to trigger Notifications & Sounds
+    checkStatusTransitions(hosts);
+
+    renderGroupFilters();
     renderSidebar();
 
-    // If a host is selected, refresh its details view
     if (selectedHostId) {
       const current = hosts.find(h => h.id === selectedHostId);
       if (current) {
@@ -153,17 +258,61 @@ async function fetchHosts() {
   }
 }
 
+// Notify on state changes
+function checkStatusTransitions(newHosts) {
+  newHosts.forEach(h => {
+    if (!h.is_active || !h.latest) return;
+    const isUp = Boolean(h.latest.is_reachable);
+    const prev = previousHostStatuses[h.id];
+
+    if (prev !== undefined && prev !== isUp) {
+      if (!isUp) {
+        playAlertSound('down');
+        sendNativeNotification('🚨 Хост недоступен!', `${h.name} (${h.target}) не отвечает на запросы.`);
+      } else {
+        playAlertSound('up');
+        sendNativeNotification('✅ Хост восстановил работу', `${h.name} (${h.target}) снова в сети!`);
+      }
+    }
+    previousHostStatuses[h.id] = isUp;
+  });
+}
+
+// Render Group Filter Pills
+function renderGroupFilters() {
+  if (!groupFilterContainer) return;
+  const groups = Array.from(new Set(hosts.map(h => h.group_name || 'Основное')));
+  
+  let html = `<span class="filter-pill ${selectedGroup === 'all' ? 'active' : ''}" data-group="all">Все</span>`;
+  groups.forEach(g => {
+    html += `<span class="filter-pill ${selectedGroup === g ? 'active' : ''}" data-group="${escapeHtml(g)}">${escapeHtml(g)}</span>`;
+  });
+  groupFilterContainer.innerHTML = html;
+
+  groupFilterContainer.querySelectorAll('.filter-pill').forEach(pill => {
+    pill.addEventListener('click', () => {
+      selectedGroup = pill.dataset.group;
+      renderGroupFilters();
+      renderSidebar();
+    });
+  });
+}
+
 // Render Hosts in Sidebar
 function renderSidebar() {
   activeHostsCount.textContent = hosts.filter(h => h.is_active).length;
   hostsContainer.innerHTML = '';
 
-  if (hosts.length === 0) {
-    hostsContainer.innerHTML = '<div class="text-center text-muted" style="padding: 20px 0; font-size: 13px;">Нет хостов для мониторинга</div>';
+  const filteredHosts = selectedGroup === 'all'
+    ? hosts
+    : hosts.filter(h => (h.group_name || 'Основное') === selectedGroup);
+
+  if (filteredHosts.length === 0) {
+    hostsContainer.innerHTML = '<div class="text-center text-muted" style="padding: 20px 0; font-size: 13px;">Нет хостов в этой группе</div>';
     return;
   }
 
-  hosts.forEach(host => {
+  filteredHosts.forEach(host => {
     const item = document.createElement('div');
     item.className = `host-item ${host.id === selectedHostId ? 'active' : ''}`;
     item.onclick = () => selectHost(host.id);
@@ -186,11 +335,16 @@ function renderSidebar() {
       pingClass = 'down';
     }
 
+    const proto = (host.check_type || 'icmp').toUpperCase();
+
     item.innerHTML = `
       <div class="host-item-left">
         <span class="status-dot ${statusClass}"></span>
         <div class="host-info-col">
-          <span class="host-item-name">${escapeHtml(host.name)}</span>
+          <div style="display: flex; align-items: center; gap: 6px;">
+            <span class="host-item-name">${escapeHtml(host.name)}</span>
+            <span style="font-size: 9px; font-weight: 700; color: #8b949e; background: rgba(255,255,255,0.06); padding: 1px 4px; border-radius: 4px;">${proto}</span>
+          </div>
           <span class="host-item-target">${escapeHtml(host.target)}</span>
         </div>
       </div>
@@ -226,6 +380,9 @@ function updateHostDetails(host) {
   headerHostName.textContent = host.name;
   headerHostTarget.textContent = host.target;
   headerInterval.textContent = `${host.interval_sec}с`;
+  if (headerHostType) headerHostType.textContent = (host.check_type || 'icmp').toUpperCase();
+  if (headerHostGroup) headerHostGroup.textContent = host.group_name || 'Основное';
+
   if (titlebarExportText) {
     titlebarExportText.textContent = `Выгрузить ${host.name} в CSV`;
   }
@@ -263,7 +420,7 @@ function updateHostDetails(host) {
   // Current Ping
   if (host.latest && host.latest.is_reachable && host.latest.latency_ms !== null) {
     metricCurrentPing.textContent = host.latest.latency_ms.toFixed(1);
-    metricTtl.textContent = host.latest.ttl ? `TTL: ${host.latest.ttl}` : 'TTL: --';
+    metricTtl.textContent = host.latest.ttl ? `TTL: ${host.latest.ttl}` : (host.check_type === 'http' ? 'HTTP 200' : 'TCP OK');
   } else {
     metricCurrentPing.textContent = host.is_active ? 'Оффлайн' : '--';
     metricTtl.textContent = host.latest && host.latest.error_msg ? host.latest.error_msg : 'TTL: --';
@@ -281,11 +438,19 @@ function updateHostDetails(host) {
   
   if (metricPacketLossCount) {
     metricPacketLossCount.textContent = lostCount;
-    // Color alert if packets are lost
     metricPacketLossCount.style.color = lostCount > 0 ? '#f85149' : 'var(--text-primary)';
   }
   if (metricPingCounts) {
     metricPingCounts.textContent = `${lossPct.toFixed(1)}% • ${st.successful_pings || 0} из ${st.total_pings || 0} получено`;
+  }
+
+  // Jitter & Quality
+  if (metricJitter) {
+    metricJitter.textContent = st.jitter_ms !== undefined ? st.jitter_ms.toFixed(1) : '0.0';
+  }
+  if (metricQualityScore && st.quality) {
+    const qColor = st.quality.score > 85 ? '#2ea043' : st.quality.score > 70 ? '#d29922' : '#f85149';
+    metricQualityScore.innerHTML = `Качество: <strong style="color: ${qColor};">${st.quality.grade} (${st.quality.score})</strong>`;
   }
 
   metricMinPing.textContent = st.min_latency !== null && st.min_latency !== undefined ? `${st.min_latency} мс` : '--';
@@ -293,30 +458,31 @@ function updateHostDetails(host) {
   metricMaxPing.textContent = st.max_latency !== null && st.max_latency !== undefined ? `${st.max_latency} мс` : '--';
 }
 
-// Fetch host recent history for Chart and Table
+// Fetch host history filtered by selected time range (1m, 5m, 15m, 1h, 24h, all)
 async function updateHistoryAndChart(hostId) {
   try {
-    const res = await fetch(`/api/hosts/${hostId}/history?limit=60`);
+    const res = await fetch(`/api/hosts/${hostId}/history?time_range=${currentTimeRange}&limit=300`);
     if (!res.ok) return;
     const history = await res.json();
 
-    // Update Chart
     const labels = [];
     const dataPoints = [];
 
     history.forEach(item => {
       const dt = new Date(item.timestamp);
-      labels.push(dt.toLocaleTimeString());
+      labels.push(currentTimeRange === '24h' || currentTimeRange === 'all'
+        ? `${dt.getMonth()+1}/${dt.getDate()} ${dt.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}`
+        : dt.toLocaleTimeString()
+      );
       dataPoints.push(item.is_reachable ? item.latency_ms : null);
     });
 
     if (pingChart) {
       pingChart.data.labels = labels;
       pingChart.data.datasets[0].data = dataPoints;
-      pingChart.update('none'); // silent update without full re-render
+      pingChart.update('none');
     }
 
-    // Update Log Table (last 15 records)
     renderLogTable(history.slice(-15).reverse());
   } catch (err) {
     console.error('History fetch error:', err);
@@ -404,6 +570,7 @@ btnDeleteHost.addEventListener('click', async () => {
 btnAddHost.addEventListener('click', () => {
   modalError.style.display = 'none';
   formAddHost.reset();
+  if (groupPortInput) groupPortInput.style.display = 'none';
   modalAddHost.style.display = 'flex';
 });
 
@@ -424,6 +591,10 @@ formAddHost.addEventListener('submit', async (e) => {
   const name = document.getElementById('input-host-name').value.trim();
   const target = document.getElementById('input-host-target').value.trim();
   const interval_sec = parseFloat(document.getElementById('input-host-interval').value);
+  const check_type = document.getElementById('input-host-type').value;
+  const portVal = document.getElementById('input-host-port').value;
+  const port = portVal ? parseInt(portVal, 10) : null;
+  const group_name = document.getElementById('input-host-group').value.trim() || 'Основное';
 
   if (!name || !target) {
     showModalError('Заполните название и адрес хоста');
@@ -434,7 +605,7 @@ formAddHost.addEventListener('submit', async (e) => {
     const res = await fetch('/api/hosts', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, target, interval_sec })
+      body: JSON.stringify({ name, target, interval_sec, check_type, port, group_name })
     });
 
     const data = await res.json();
@@ -602,6 +773,7 @@ if (btnCloseTraceroute) {
 
 // Window init
 window.addEventListener('DOMContentLoaded', () => {
+  setupNotifications();
   initChart();
   fetchHosts();
   // Poll every 1.5s for real-time dashboard updates
