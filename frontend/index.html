@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Host Monitor macOS</title>
+  <!-- Google Fonts: Inter & JetBrains Mono for tech metrics -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="mac-window">
+    <!-- macOS Window Titlebar -->
+    <header class="mac-titlebar">
+      <div class="traffic-lights">
+        <span class="light close"></span>
+        <span class="light minimize"></span>
+        <span class="light maximize"></span>
+      </div>
+      <div class="titlebar-title">
+        <svg class="title-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M4 11a9 9 0 0 1 9 9"></path>
+          <path d="M4 4a16 16 0 0 1 16 16"></path>
+          <circle cx="5" cy="19" r="1"></circle>
+        </svg>
+        <span>Host Monitor</span>
+        <span class="version-badge">macOS</span>
+      </div>
+      <div class="titlebar-actions">
+        <button id="btn-export-all" class="btn btn-secondary btn-sm" title="Выгрузить всю статистику всех хостов в CSV">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+            <polyline points="7 10 12 15 17 10"></polyline>
+            <line x1="12" y1="15" x2="12" y2="3"></line>
+          </svg>
+          Экспорт всех в CSV
+        </button>
+        <button id="btn-add-host" class="btn btn-primary btn-sm">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5">
+            <line x1="12" y1="5" x2="12" y2="19"></line>
+            <line x1="5" y1="12" x2="19" y2="12"></line>
+          </svg>
+          Добавить хост
+        </button>
+      </div>
+    </header>
+
+    <!-- Main Content Container -->
+    <div class="mac-layout">
+      <!-- Sidebar Hosts List -->
+      <aside class="sidebar">
+        <div class="sidebar-header">
+          <span class="sidebar-heading">Мониторинг хостов</span>
+          <span id="active-hosts-count" class="badge">0</span>
+        </div>
+        <div class="hosts-list" id="hosts-container">
+          <!-- Dynamic host items -->
+          <div class="host-skeleton">Загрузка хостов...</div>
+        </div>
+      </aside>
+
+      <!-- Host Detail View -->
+      <main class="main-dashboard" id="dashboard-view">
+        <div id="no-host-selected" class="empty-state">
+          <div class="empty-state-icon">📡</div>
+          <h3>Выберите хост для просмотра</h3>
+          <p>Выберите хост из списка слева или добавьте новый IP для начала отслеживания задержки и доступности.</p>
+        </div>
+
+        <div id="host-details" class="details-content" style="display: none;">
+          <!-- Top bar with active host controls -->
+          <div class="host-header-card">
+            <div class="host-title-group">
+              <div class="status-indicator-wrapper">
+                <span id="header-status-indicator" class="status-dot"></span>
+              </div>
+              <div>
+                <h1 id="header-host-name">Google DNS</h1>
+                <div class="host-subtitle">
+                  <span id="header-host-target" class="code-badge">8.8.8.8</span>
+                  <span class="separator">•</span>
+                  <span id="header-status-text" class="status-label">В сети</span>
+                  <span class="separator">•</span>
+                  <span class="text-muted">Интервал: <strong id="header-interval">2.0с</strong></span>
+                </div>
+              </div>
+            </div>
+
+            <div class="host-actions-toolbar">
+              <button id="btn-toggle-active" class="btn btn-secondary btn-icon" title="Приостановить/возобновить">
+                <svg id="icon-pause" viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                  <rect x="6" y="4" width="4" height="16"></rect>
+                  <rect x="14" y="4" width="4" height="16"></rect>
+                </svg>
+              </button>
+              <button id="btn-export-single" class="btn btn-secondary" title="Экспортировать историю пингов в CSV">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                  <polyline points="7 10 12 15 17 10"></polyline>
+                  <line x1="12" y1="15" x2="12" y2="3"></line>
+                </svg>
+                Выгрузить в CSV
+              </button>
+              <button id="btn-delete-host" class="btn btn-danger btn-icon" title="Удалить хост">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                  <polyline points="3 6 5 6 21 6"></polyline>
+                  <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                </svg>
+              </button>
+            </div>
+          </div>
+
+          <!-- Quick Metrics Cards -->
+          <div class="metrics-grid">
+            <div class="metric-card current-latency">
+              <div class="metric-label">Текущий пинг</div>
+              <div class="metric-value-row">
+                <span id="metric-current-ping" class="metric-number">--</span>
+                <span class="metric-unit">мс</span>
+              </div>
+              <div id="metric-ttl" class="metric-sub">TTL: --</div>
+            </div>
+
+            <div class="metric-card uptime-stat">
+              <div class="metric-label">Доступность (Uptime)</div>
+              <div class="metric-value-row">
+                <span id="metric-uptime" class="metric-number">--</span>
+                <span class="metric-unit">%</span>
+              </div>
+              <div class="progress-bar-bg">
+                <div id="metric-uptime-bar" class="progress-bar-fill" style="width: 100%;"></div>
+              </div>
+            </div>
+
+            <div class="metric-card loss-stat">
+              <div class="metric-label">Потеря пакетов</div>
+              <div class="metric-value-row">
+                <span id="metric-packet-loss" class="metric-number">--</span>
+                <span class="metric-unit">%</span>
+              </div>
+              <div id="metric-ping-counts" class="metric-sub">Успешно: 0 / 0</div>
+            </div>
+
+            <div class="metric-card latency-range">
+              <div class="metric-label">Мин / Сред / Макс</div>
+              <div class="metric-stats-row">
+                <div class="stat-col">
+                  <span class="stat-tag min">MIN</span>
+                  <span id="metric-min-ping" class="stat-val">--</span>
+                </div>
+                <div class="stat-divider">/</div>
+                <div class="stat-col">
+                  <span class="stat-tag avg">AVG</span>
+                  <span id="metric-avg-ping" class="stat-val">--</span>
+                </div>
+                <div class="stat-divider">/</div>
+                <div class="stat-col">
+                  <span class="stat-tag max">MAX</span>
+                  <span id="metric-max-ping" class="stat-val">--</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Real-Time Chart Area -->
+          <div class="chart-container-card">
+            <div class="chart-header">
+              <div class="chart-title-wrap">
+                <h3>График задержки (Ping, ms)</h3>
+                <span class="live-pill"><span class="pulse-ring"></span> LIVE</span>
+              </div>
+              <div class="chart-controls">
+                <span class="text-muted">Показаны последние 60 точек</span>
+              </div>
+            </div>
+            <div class="canvas-wrapper">
+              <canvas id="pingChart"></canvas>
+            </div>
+          </div>
+
+          <!-- Ping Log Table -->
+          <div class="log-container-card">
+            <div class="log-header">
+              <h3>Последние замеры</h3>
+              <span id="log-count" class="text-muted">История</span>
+            </div>
+            <div class="table-scroll">
+              <table class="mac-table">
+                <thead>
+                  <tr>
+                    <th>Время</th>
+                    <th>Статус</th>
+                    <th>Пинг (мс)</th>
+                    <th>TTL</th>
+                    <th>Детали / Ошибки</th>
+                  </tr>
+                </thead>
+                <tbody id="pings-log-body">
+                  <tr><td colspan="5" class="text-center text-muted">Нет данных</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <!-- Add Host Modal -->
+  <div id="modal-add-host" class="modal-backdrop" style="display: none;">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h3>Добавить хост для мониторинга</h3>
+        <button id="btn-close-modal" class="modal-close">&times;</button>
+      </div>
+      <form id="form-add-host" class="modal-body">
+        <div class="form-group">
+          <label for="input-host-name">Название / Описание</label>
+          <input type="text" id="input-host-name" placeholder="Например: Домашний роутер, Google DNS, Сервер 1" required>
+        </div>
+        <div class="form-group">
+          <label for="input-host-target">IP адрес или Домен</label>
+          <input type="text" id="input-host-target" placeholder="192.168.1.1 или 8.8.8.8 или example.com" required>
+        </div>
+        <div class="form-group">
+          <label for="input-host-interval">Интервал проверки (секунды)</label>
+          <select id="input-host-interval">
+            <option value="1.0">1.0 сек (Очень часто)</option>
+            <option value="1.5">1.5 сек</option>
+            <option value="2.0" selected>2.0 сек (Стандартный)</option>
+            <option value="5.0">5.0 сек</option>
+            <option value="10.0">10.0 сек</option>
+          </select>
+        </div>
+        <div id="modal-error" class="error-banner" style="display: none;"></div>
+        <div class="modal-footer">
+          <button type="button" id="btn-cancel-modal" class="btn btn-secondary">Отмена</button>
+          <button type="submit" class="btn btn-primary">Добавить и запустить</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
