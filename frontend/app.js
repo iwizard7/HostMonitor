@@ -28,7 +28,7 @@ const metricCurrentPing = document.getElementById('metric-current-ping');
 const metricTtl = document.getElementById('metric-ttl');
 const metricUptime = document.getElementById('metric-uptime');
 const metricUptimeBar = document.getElementById('metric-uptime-bar');
-const metricPacketLoss = document.getElementById('metric-packet-loss');
+const metricPacketLossCount = document.getElementById('metric-packet-loss-count');
 const metricPingCounts = document.getElementById('metric-ping-counts');
 const metricMinPing = document.getElementById('metric-min-ping');
 const metricAvgPing = document.getElementById('metric-avg-ping');
@@ -276,9 +276,17 @@ function updateHostDetails(host) {
   metricUptimeBar.style.width = `${uptime}%`;
   metricUptimeBar.style.backgroundColor = uptime > 95 ? '#2ea043' : uptime > 80 ? '#d29922' : '#f85149';
 
-  const loss = st.packet_loss_pct !== undefined ? st.packet_loss_pct : 0;
-  metricPacketLoss.textContent = loss.toFixed(1);
-  metricPingCounts.textContent = `Успешно: ${st.successful_pings || 0} / ${st.total_pings || 0}`;
+  const lossPct = st.packet_loss_pct !== undefined ? st.packet_loss_pct : 0;
+  const lostCount = st.lost_pings !== undefined ? st.lost_pings : ((st.total_pings || 0) - (st.successful_pings || 0));
+  
+  if (metricPacketLossCount) {
+    metricPacketLossCount.textContent = lostCount;
+    // Color alert if packets are lost
+    metricPacketLossCount.style.color = lostCount > 0 ? '#f85149' : 'var(--text-primary)';
+  }
+  if (metricPingCounts) {
+    metricPingCounts.textContent = `${lossPct.toFixed(1)}% • ${st.successful_pings || 0} из ${st.total_pings || 0} получено`;
+  }
 
   metricMinPing.textContent = st.min_latency !== null && st.min_latency !== undefined ? `${st.min_latency} мс` : '--';
   metricAvgPing.textContent = st.avg_latency !== null && st.avg_latency !== undefined ? `${st.avg_latency} мс` : '--';

@@ -72,12 +72,14 @@ async def get_hosts():
             
             total = stats.get("total_pings") or 0
             succ = stats.get("successful_pings") or 0
+            lost = total - succ
             loss_pct = round((1.0 - (succ / total)) * 100, 1) if total > 0 else 0.0
             uptime_pct = round((succ / total) * 100, 1) if total > 0 else 100.0
 
             h["stats"] = {
                 "total_pings": total,
                 "successful_pings": succ,
+                "lost_pings": lost,
                 "packet_loss_pct": loss_pct,
                 "uptime_pct": uptime_pct,
                 "min_latency": round(stats["min_latency"], 2) if stats.get("min_latency") is not None else None,
